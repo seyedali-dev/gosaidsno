@@ -3,9 +3,10 @@
 > _I really wanted to use annotations…_  
 > _but Go said no._
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/yourusername/gosaidsno.svg)](https://pkg.go.dev/github.com/yourusername/gosaidsno)
-[![Go Report Card](https://goreportcard.com/badge/github.com/yourusername/gosaidsno)](https://goreportcard.com/report/github.com/yourusername/gosaidsno)
-![gosaidsno gopher](./gosaidno.png)
+<p align="center">
+  <img src="./gosaidno1.png" alt="goxide logo" width="400" style="display:inline-block; margin-right:10px;"/>
+  <img src="./gosaidno2.png" alt="goxide logo 2" width="400" style="display:inline-block;"/>
+</p>
 
 **AOP without annotations. Just function wrapping. The Go way.**
 
