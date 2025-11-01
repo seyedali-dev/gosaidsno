@@ -18,10 +18,16 @@ func Wrap0(name string, fn func()) func() {
 func Wrap0R[R any](name string, fn func() R) func() R {
 	return func() R {
 		var result R
-		executeWithAdvice(name, func(ctx *Context) {
+		ctx := executeWithAdvice(name, func(ctx *Context) {
 			result = fn()
 			ctx.SetResult(0, result)
 		})
+
+		// If Around advice set a result and skipped execution, use that result
+		if ctx != nil && len(ctx.Results) > 0 && ctx.Results[0] != nil {
+			result = ctx.Results[0].(R)
+		}
+
 		return result
 	}
 }
@@ -31,11 +37,20 @@ func Wrap0RE[R any](name string, fn func() (R, error)) func() (R, error) {
 	return func() (R, error) {
 		var result R
 		var err error
-		executeWithAdvice(name, func(ctx *Context) {
+		ctx := executeWithAdvice(name, func(ctx *Context) {
 			result, err = fn()
 			ctx.SetResult(0, result)
 			ctx.Error = err
 		})
+
+		// If Around advice set a result and skipped execution, use that result
+		if ctx != nil && len(ctx.Results) > 0 && ctx.Results[0] != nil {
+			result = ctx.Results[0].(R)
+		}
+		if ctx != nil && ctx.Error != nil {
+			err = ctx.Error
+		}
+
 		return result, err
 	}
 }
@@ -53,10 +68,16 @@ func Wrap1[A any](name string, fn func(A)) func(A) {
 func Wrap1R[A, R any](name string, fn func(A) R) func(A) R {
 	return func(a A) R {
 		var result R
-		executeWithAdvice(name, func(ctx *Context) {
+		ctx := executeWithAdvice(name, func(ctx *Context) {
 			result = fn(a)
 			ctx.SetResult(0, result)
 		}, a)
+
+		// If Around advice set a result and skipped execution, use that result
+		if ctx != nil && len(ctx.Results) > 0 && ctx.Results[0] != nil {
+			result = ctx.Results[0].(R)
+		}
+
 		return result
 	}
 }
@@ -150,14 +171,15 @@ func Wrap3RE[A, B, C, R any](name string, fn func(A, B, C) (R, error)) func(A, B
 
 // -------------------------------------------- Private Helper Functions --------------------------------------------
 
-// executeWithAdvice executes a function with full advice chain support.
-func executeWithAdvice(functionName string, targetFn func(*Context), args ...any) {
+// executeWithAdvice executes a function with full advice chain support and returns the context.
+func executeWithAdvice(functionName string, targetFn func(*Context), args ...any) *Context {
 	// Get advice chain from registry
 	chain, err := GetAdviceChain(functionName)
 	if err != nil {
 		// No advice registered, just execute target function
-		targetFn(NewContext(functionName, args...))
-		return
+		ctx := NewContext(functionName, args...)
+		targetFn(ctx)
+		return ctx
 	}
 
 	// Create execution context
@@ -191,7 +213,11 @@ func executeWithAdvice(functionName string, targetFn func(*Context), args ...any
 		}
 		// If Around advice sets Skipped, don't execute target function
 		if ctx.Skipped {
-			return
+			// Execute AfterReturning if no error (Around advice might have set result)
+			if ctx.Error == nil && !ctx.HasPanic() {
+				_ = chain.ExecuteAfterReturning(ctx)
+			}
+			return ctx
 		}
 	}
 
@@ -202,4 +228,6 @@ func executeWithAdvice(functionName string, targetFn func(*Context), args ...any
 	if ctx.Error == nil && !ctx.HasPanic() {
 		_ = chain.ExecuteAfterReturning(ctx)
 	}
+
+	return ctx
 }

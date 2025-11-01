@@ -1,7 +1,7 @@
 // Package aspect - advice defines the advice types and execution chain for AOP
 package aspect
 
-import "github.com/seyedali-dev/gosaidsno/utils"
+import "sort"
 
 // -------------------------------------------- Constants & Variables --------------------------------------------
 
@@ -106,12 +106,12 @@ func (ac *AdviceChain) Count() int {
 
 // executeAdviceList runs a list of advice in priority order.
 func (ac *AdviceChain) executeAdviceList(adviceList []Advice, ctx *Context) error {
-	// Sort by priority (simple bubble sort - small lists)
+	// Sort by priority
 	sortedAdviceList := make([]Advice, len(adviceList))
 	copy(sortedAdviceList, adviceList)
 
-	utils.BubbleSort(sortedAdviceList, utils.SortDescending, func(a, b Advice) bool {
-		return a.Priority < b.Priority
+	sort.Slice(sortedAdviceList, func(i, j int) bool {
+		return sortedAdviceList[i].Priority > sortedAdviceList[j].Priority
 	})
 
 	// Execute in order
