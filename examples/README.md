@@ -6,7 +6,7 @@
 # Basic usage - logging, timing, validation
 go run examples/01_basic_usage/main.go
 
-# Caching with Around advice
+# Caching with Around advice - Broken... needs fix
 go run examples/02_caching_pattern/main.go
 
 # Authentication and authorization
@@ -33,7 +33,7 @@ go run examples/05_retry_pattern/main.go
 - Wrap functions during initialization
 - Use metadata to pass data between advice
 
-### 02_caching_pattern
+### 02_caching_pattern - Broken... needs fix
 **Real-world use cases:**
 - Database query caching
 - API response caching
