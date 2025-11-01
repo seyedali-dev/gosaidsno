@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/seyedali-dev/gosaidsno/aspect"
+	"github.com/seyedali-dev/gosaidsno/examples/utils"
 )
 
 // -------------------------------------------- Domain Models --------------------------------------------
@@ -50,7 +51,7 @@ func setupLogging() {
 			Type:     aspect.Before,
 			Priority: 100,
 			Handler: func(ctx *aspect.Context) error {
-				log.Printf("🟢 [BEFORE] %s - Priority: %d", ctx.FunctionName, 100)
+				utils.LogBefore(ctx, 100, "LOGGING")
 				log.Printf("   📝 [LOG] Starting %s with args: %v", ctx.FunctionName, ctx.Args)
 				return nil
 			},
@@ -60,7 +61,7 @@ func setupLogging() {
 			Type:     aspect.After,
 			Priority: 100,
 			Handler: func(ctx *aspect.Context) error {
-				log.Printf("🔵 [AFTER] %s - Priority: %d", ctx.FunctionName, 100)
+				utils.LogAfter(ctx, 100, "LOGGING")
 				status := "SUCCESS"
 				if ctx.Error != nil {
 					status = "FAILED"
@@ -81,7 +82,7 @@ func setupTiming() {
 			Type:     aspect.Before,
 			Priority: 90,
 			Handler: func(ctx *aspect.Context) error {
-				log.Printf("🟢 [BEFORE] %s - Priority: %d", ctx.FunctionName, 90)
+				utils.LogBefore(ctx, 90, "TIMING")
 				ctx.Metadata["start"] = time.Now()
 				log.Printf("   ⏱️  [TIMING] Started timer for %s", ctx.FunctionName)
 				return nil
@@ -92,7 +93,7 @@ func setupTiming() {
 			Type:     aspect.After,
 			Priority: 90,
 			Handler: func(ctx *aspect.Context) error {
-				log.Printf("🔵 [AFTER] %s - Priority: %d", ctx.FunctionName, 90)
+				utils.LogAfter(ctx, 90, "TIMING")
 				start, ok := ctx.Metadata["start"].(time.Time)
 				if !ok {
 					return nil // Skip if timing not initialized
@@ -110,7 +111,7 @@ func setupValidation() {
 		Type:     aspect.Before,
 		Priority: 110, // Higher priority, runs first
 		Handler: func(ctx *aspect.Context) error {
-			log.Printf("🟢 [BEFORE] %s - Priority: %d", ctx.FunctionName, 110)
+			utils.LogBefore(ctx, 110, "VALIDATION")
 			userID := ctx.Args[0].(string)
 			amount := ctx.Args[1].(float64)
 
@@ -134,7 +135,7 @@ func setupPanicRecovery() {
 			Type:     aspect.AfterThrowing,
 			Priority: 100,
 			Handler: func(ctx *aspect.Context) error {
-				log.Printf("🔴 [AFTER_THROWING] %s - Priority: %d", ctx.FunctionName, 100)
+				utils.LogAfterThrowing(ctx, 100, "PANIC RECOVERY")
 				log.Printf("   🚨 [PANIC RECOVERY] Function %s panicked: %v", ctx.FunctionName, ctx.PanicValue)
 				log.Printf("   🔧 [RECOVERY] Recovered from panic, continuing execution")
 				return nil
@@ -272,7 +273,7 @@ func example4_AfterReturning() {
 		Type:     aspect.AfterReturning,
 		Priority: 50,
 		Handler: func(ctx *aspect.Context) error {
-			log.Printf("🟣 [AFTER_RETURNING] %s - Priority: %d", ctx.FunctionName, 50)
+			utils.LogAfterReturning(ctx, 50, "SUCCESS HOOK")
 			log.Printf("   🎉 [SUCCESS HOOK] Order created successfully, sending confirmation...")
 			order := ctx.Results[0].(*Order)
 			SendNotification(order.UserID, fmt.Sprintf("Order %s confirmed!", order.ID))

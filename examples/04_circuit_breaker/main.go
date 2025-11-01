@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/seyedali-dev/gosaidsno/aspect"
+	"github.com/seyedali-dev/gosaidsno/examples/utils"
 )
 
 // -------------------------------------------- Circuit Breaker --------------------------------------------
@@ -33,55 +34,6 @@ func NewCircuitBreaker(maxFailures int, resetTimeout time.Duration) *CircuitBrea
 	}
 }
 
-func (cb *CircuitBreaker) Call(fn func() error) error {
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-
-	// Check if we should transition from OPEN to HALF_OPEN
-	if cb.state == "OPEN" && time.Since(cb.openedAt) > cb.resetTimeout {
-		log.Printf("   🔄 [CIRCUIT] Transitioning OPEN -> HALF_OPEN")
-		cb.state = "HALF_OPEN"
-		cb.successes = 0
-	}
-
-	// Reject if circuit is OPEN
-	if cb.state == "OPEN" {
-		remaining := cb.resetTimeout - time.Since(cb.openedAt)
-		return fmt.Errorf("circuit breaker OPEN, retry in %v", remaining.Round(time.Second))
-	}
-
-	// Execute function
-	err := fn()
-
-	if err != nil {
-		cb.failures++
-		log.Printf("   ❌ [CIRCUIT] Failure recorded (%d/%d)", cb.failures, cb.maxFailures)
-
-		if cb.failures >= cb.maxFailures {
-			cb.state = "OPEN"
-			cb.openedAt = time.Now()
-			log.Printf("   🚨 [CIRCUIT] Circuit OPENED due to failures")
-		}
-		return err
-	}
-
-	// Success
-	if cb.state == "HALF_OPEN" {
-		cb.successes++
-		log.Printf("   ✅ [CIRCUIT] Success in HALF_OPEN (%d/%d)", cb.successes, cb.successesNeeded)
-
-		if cb.successes >= cb.successesNeeded {
-			cb.state = "CLOSED"
-			cb.failures = 0
-			log.Printf("   🔄 [CIRCUIT] Circuit CLOSED - system recovered")
-		}
-	} else if cb.state == "CLOSED" {
-		cb.failures = 0 // Reset on success
-	}
-
-	return nil
-}
-
 var externalServiceCircuit = NewCircuitBreaker(3, 5*time.Second)
 
 // -------------------------------------------- Setup --------------------------------------------
@@ -96,7 +48,7 @@ func setupAOP() {
 		Type:     aspect.Around,
 		Priority: 100,
 		Handler: func(ctx *aspect.Context) error {
-			log.Printf("🟠 [AROUND] %s - Priority: %d - START (CIRCUIT BREAKER)", ctx.FunctionName, 100)
+			utils.LogAround(ctx, 100, "CIRCUIT BREAKER")
 
 			// Check circuit state
 			externalServiceCircuit.mu.Lock()
@@ -125,7 +77,7 @@ func setupAOP() {
 				ctx.SetResult(0, "")
 				ctx.Error = fmt.Errorf("circuit breaker OPEN, retry in %v", remaining.Round(time.Second))
 				ctx.Skipped = true
-				log.Printf("🟠 [AROUND] %s - END (circuit open, execution blocked)", ctx.FunctionName)
+				utils.LogAround(ctx, 100, "END (circuit open, execution blocked)")
 				return nil
 			}
 
@@ -136,7 +88,7 @@ func setupAOP() {
 			}
 
 			log.Printf("   ▶️  [CIRCUIT] Proceeding with function execution")
-			log.Printf("🟠 [AROUND] %s - END (allowing execution)", ctx.FunctionName)
+			utils.LogAround(ctx, 100, "END (allowing execution)")
 			return nil // Allow execution
 		},
 	})
@@ -146,7 +98,7 @@ func setupAOP() {
 		Type:     aspect.After,
 		Priority: 100,
 		Handler: func(ctx *aspect.Context) error {
-			log.Printf("🔵 [AFTER] %s - Priority: %d (CIRCUIT METRICS)", ctx.FunctionName, 100)
+			utils.LogAfter(ctx, 100, "CIRCUIT METRICS")
 
 			if ctx.Skipped {
 				log.Printf("   ⏭️  [CIRCUIT] Execution was skipped (circuit open)")
@@ -197,7 +149,7 @@ func setupAOP() {
 		Type:     aspect.Before,
 		Priority: 90,
 		Handler: func(ctx *aspect.Context) error {
-			log.Printf("🟢 [BEFORE] %s - Priority: %d (REQUEST LOG)", ctx.FunctionName, 90)
+			utils.LogBefore(ctx, 90, "REQUEST LOG")
 			endpoint := ctx.Args[0].(string)
 			log.Printf("   🌐 [REQUEST] Calling external service: %s", endpoint)
 			return nil

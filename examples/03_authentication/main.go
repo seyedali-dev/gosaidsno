@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/seyedali-dev/gosaidsno/aspect"
+	"github.com/seyedali-dev/gosaidsno/examples/utils"
 )
 
 // -------------------------------------------- Auth System --------------------------------------------
@@ -51,7 +52,7 @@ func setupAOP() {
 			Type:     aspect.Before,
 			Priority: 100, // Highest - run first
 			Handler: func(ctx *aspect.Context) error {
-				log.Printf("🟢 [BEFORE] %s - Priority: %d (AUTHENTICATION)", ctx.FunctionName, 100)
+				utils.LogBefore(ctx, 100, "AUTHENTICATION")
 				token := ctx.Args[0].(string)
 
 				log.Printf("   🔐 [AUTH] Validating token: %s", token)
@@ -76,7 +77,7 @@ func setupAOP() {
 		Type:     aspect.Before,
 		Priority: 90, // After authentication
 		Handler: func(ctx *aspect.Context) error {
-			log.Printf("🟢 [BEFORE] %s - Priority: %d (AUTHORIZATION)", ctx.FunctionName, 90)
+			utils.LogBefore(ctx, 90, "AUTHORIZATION")
 			role := ctx.Metadata["role"].(string)
 			userID := ctx.Metadata["userID"].(string)
 
@@ -97,7 +98,7 @@ func setupAOP() {
 			Type:     aspect.After,
 			Priority: 100,
 			Handler: func(ctx *aspect.Context) error {
-				log.Printf("🔵 [AFTER] %s - Priority: %d (AUDIT)", ctx.FunctionName, 100)
+				utils.LogAfter(ctx, 100, "AUDIT")
 				userID, _ := ctx.Metadata["userID"].(string)
 				status := "SUCCESS"
 				if ctx.Error != nil {
@@ -122,7 +123,7 @@ func setupAOP() {
 		Type:     aspect.AfterReturning,
 		Priority: 80,
 		Handler: func(ctx *aspect.Context) error {
-			log.Printf("🟣 [AFTER_RETURNING] %s - Priority: %d (SUCCESS LOG)", ctx.FunctionName, 80)
+			utils.LogAfterReturning(ctx, 80, "SUCCESS LOG")
 			userID := ctx.Metadata["userID"].(string)
 			log.Printf("   📈 [METRICS] User %s successfully accessed data", userID)
 			return nil

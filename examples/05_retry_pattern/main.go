@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/seyedali-dev/gosaidsno/aspect"
+	"github.com/seyedali-dev/gosaidsno/examples/utils"
 )
 
 // -------------------------------------------- Retry Wrapper --------------------------------------------
@@ -61,7 +62,7 @@ func setupAOP() {
 			Type:     aspect.Before,
 			Priority: 100,
 			Handler: func(ctx *aspect.Context) error {
-				log.Printf("🟢 [BEFORE] %s - Priority: %d (TIMING START)", ctx.FunctionName, 100)
+				utils.LogBefore(ctx, 100, "TIMING START")
 				ctx.Metadata["start"] = time.Now()
 				log.Printf("   ⏱️  [TIMING] Started execution timer")
 				return nil
@@ -72,7 +73,7 @@ func setupAOP() {
 			Type:     aspect.After,
 			Priority: 100,
 			Handler: func(ctx *aspect.Context) error {
-				log.Printf("🔵 [AFTER] %s - Priority: %d (TIMING END)", ctx.FunctionName, 100)
+				utils.LogAfter(ctx, 100, "TIMING END")
 				start := ctx.Metadata["start"].(time.Time)
 				duration := time.Since(start)
 				status := "SUCCESS"
@@ -91,7 +92,7 @@ func setupAOP() {
 		Type:     aspect.Before,
 		Priority: 90,
 		Handler: func(ctx *aspect.Context) error {
-			log.Printf("🟢 [BEFORE] %s - Priority: %d (EMAIL LOG)", ctx.FunctionName, 90)
+			utils.LogBefore(ctx, 90, "EMAIL LOG")
 			to := ctx.Args[0].(string)
 			subject := ctx.Args[1].(string)
 			log.Printf("   📧 [EMAIL] Preparing to send email to: %s", to)
@@ -105,7 +106,7 @@ func setupAOP() {
 		Type:     aspect.Before,
 		Priority: 90,
 		Handler: func(ctx *aspect.Context) error {
-			log.Printf("🟢 [BEFORE] %s - Priority: %d (PAYMENT LOG)", ctx.FunctionName, 90)
+			utils.LogBefore(ctx, 90, "PAYMENT LOG")
 			amount := ctx.Args[0].(float64)
 			cardToken := ctx.Args[1].(string)
 			log.Printf("   💳 [PAYMENT] Processing payment: $%.2f", amount)

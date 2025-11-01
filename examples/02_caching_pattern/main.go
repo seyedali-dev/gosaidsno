@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/seyedali-dev/gosaidsno/aspect"
+	"github.com/seyedali-dev/gosaidsno/examples/utils"
 )
 
 // -------------------------------------------- Simple Cache --------------------------------------------
@@ -62,7 +63,7 @@ func setupAOP() {
 		Type:     aspect.Around,
 		Priority: 100,
 		Handler: func(ctx *aspect.Context) error {
-			log.Printf("🟠 [AROUND] %s - Priority: %d - START", ctx.FunctionName, 100)
+			utils.LogAround(ctx, 100, "CACHE CHECK")
 			userID := ctx.Args[0].(string)
 			cacheKey := "user:" + userID
 
@@ -78,7 +79,7 @@ func setupAOP() {
 
 			log.Printf("   💾 [CACHE MISS] FetchUserProfile(%s) - will fetch from DB", userID)
 			log.Printf("   ▶️  [AROUND] Proceeding with function execution")
-			log.Printf("🟠 [AROUND] %s - END (cache miss)", ctx.FunctionName)
+			utils.LogAround(ctx, 100, "END (cache miss)")
 			return nil // Allow function to execute
 		},
 	})
@@ -88,7 +89,7 @@ func setupAOP() {
 		Type:     aspect.AfterReturning,
 		Priority: 100,
 		Handler: func(ctx *aspect.Context) error {
-			log.Printf("🟣 [AFTER_RETURNING] %s - Priority: %d", ctx.FunctionName, 100)
+			utils.LogAfterReturning(ctx, 100, "CACHE POPULATION")
 
 			// Don't cache if execution was skipped (cache hit)
 			if ctx.Skipped {
@@ -119,7 +120,7 @@ func setupAOP() {
 		Type:     aspect.Around,
 		Priority: 100,
 		Handler: func(ctx *aspect.Context) error {
-			log.Printf("🟠 [AROUND] %s - Priority: %d - START", ctx.FunctionName, 100)
+			utils.LogAround(ctx, 100, "TTL CACHE CHECK")
 			userID := ctx.Args[0].(string)
 
 			cacheMu.RLock()
@@ -132,7 +133,7 @@ func setupAOP() {
 				ctx.SetResult(0, entry.value)
 				ctx.Skipped = true
 				log.Printf("   ⏩ [AROUND] Skipping function execution due to cache hit")
-				log.Printf("🟠 [AROUND] %s - END (cache hit)", ctx.FunctionName)
+				utils.LogAround(ctx, 100, "END (cache hit)")
 				return nil
 			}
 
@@ -142,7 +143,7 @@ func setupAOP() {
 				log.Printf("   💾 [CACHE MISS] CalculateRecommendations(%s) - calculating", userID)
 			}
 			log.Printf("   ▶️  [AROUND] Proceeding with function execution")
-			log.Printf("🟠 [AROUND] %s - END (cache miss/expired)", ctx.FunctionName)
+			utils.LogAround(ctx, 100, "END (cache miss/expired)")
 			return nil
 		},
 	})
@@ -151,7 +152,7 @@ func setupAOP() {
 		Type:     aspect.AfterReturning,
 		Priority: 100,
 		Handler: func(ctx *aspect.Context) error {
-			log.Printf("🟣 [AFTER_RETURNING] %s - Priority: %d", ctx.FunctionName, 100)
+			utils.LogAfterReturning(ctx, 100, "TTL CACHE POPULATION")
 
 			// Don't cache if execution was skipped
 			if ctx.Skipped {
