@@ -97,14 +97,25 @@ func setupAOP() {
 		Priority: 100,
 		Handler: func(ctx *aspect.Context) error {
 			// Check circuit state
-			externalServiceCircuit.mu.RLock()
+			externalServiceCircuit.mu.Lock()
 			state := externalServiceCircuit.state
-			externalServiceCircuit.mu.RUnlock()
+
+			// Check if we should transition from OPEN to HALF_OPEN
+			if state == "OPEN" && time.Since(externalServiceCircuit.openedAt) > externalServiceCircuit.resetTimeout {
+				log.Printf("[CIRCUIT] Transitioning OPEN -> HALF_OPEN")
+				externalServiceCircuit.state = "HALF_OPEN"
+				externalServiceCircuit.successes = 0
+				state = "HALF_OPEN"
+			}
+			externalServiceCircuit.mu.Unlock()
 
 			log.Printf("[CIRCUIT] Current state: %s", state)
 
 			if state == "OPEN" {
+				externalServiceCircuit.mu.RLock()
 				remaining := externalServiceCircuit.resetTimeout - time.Since(externalServiceCircuit.openedAt)
+				externalServiceCircuit.mu.RUnlock()
+
 				log.Printf("[CIRCUIT] Rejecting call - circuit OPEN")
 				ctx.SetResult(0, "")
 				ctx.Error = fmt.Errorf("circuit breaker OPEN, retry in %v", remaining.Round(time.Second))

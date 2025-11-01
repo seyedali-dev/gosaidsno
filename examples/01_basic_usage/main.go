@@ -50,6 +50,7 @@ func setupLogging() {
 			Type:     aspect.Before,
 			Priority: 100,
 			Handler: func(ctx *aspect.Context) error {
+				log.Println("[BEFORE]")
 				log.Printf("[LOG] Starting %s", ctx.FunctionName)
 				return nil
 			},
@@ -59,6 +60,7 @@ func setupLogging() {
 			Type:     aspect.After,
 			Priority: 100,
 			Handler: func(ctx *aspect.Context) error {
+				log.Println("[AFTER]")
 				status := "SUCCESS"
 				if ctx.Error != nil {
 					status = "FAILED"
@@ -76,6 +78,7 @@ func setupTiming() {
 			Type:     aspect.Before,
 			Priority: 90,
 			Handler: func(ctx *aspect.Context) error {
+				log.Println("[BEFORE]")
 				ctx.Metadata["start"] = time.Now()
 				return nil
 			},
@@ -85,7 +88,12 @@ func setupTiming() {
 			Type:     aspect.After,
 			Priority: 90,
 			Handler: func(ctx *aspect.Context) error {
-				duration := time.Since(ctx.Metadata["start"].(time.Time))
+				log.Println("[AFTER]")
+				start, ok := ctx.Metadata["start"].(time.Time)
+				if !ok {
+					return nil // Skip if timing not initialized
+				}
+				duration := time.Since(start)
 				log.Printf("[PERF] %s took %v", ctx.FunctionName, duration)
 				return nil
 			},
@@ -98,6 +106,7 @@ func setupValidation() {
 		Type:     aspect.Before,
 		Priority: 110, // Higher priority, runs first
 		Handler: func(ctx *aspect.Context) error {
+			log.Println("[BEFORE]")
 			userID := ctx.Args[0].(string)
 			amount := ctx.Args[1].(float64)
 
@@ -119,6 +128,7 @@ func setupPanicRecovery() {
 			Type:     aspect.AfterThrowing,
 			Priority: 100,
 			Handler: func(ctx *aspect.Context) error {
+				log.Println("[AFTER_THROWING]")
 				log.Printf("[PANIC RECOVERY] Function %s panicked: %v", ctx.FunctionName, ctx.PanicValue)
 				// In production: send alert, log to monitoring system
 				return nil
@@ -247,6 +257,7 @@ func example4_AfterReturning() {
 		Type:     aspect.AfterReturning,
 		Priority: 50,
 		Handler: func(ctx *aspect.Context) error {
+			log.Println("[AFTER_RETURNING]")
 			log.Printf("[SUCCESS HOOK] Order created successfully, sending confirmation...")
 			order := ctx.Results[0].(*Order)
 			SendNotification(order.UserID, fmt.Sprintf("Order %s confirmed!", order.ID))

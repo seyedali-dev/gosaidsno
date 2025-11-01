@@ -1,4 +1,4 @@
-// Package main - retry_pattern demonstrates Before/After advice for automatic retries
+// Package main - retry_pattern demonstrates wrapper pattern for automatic retries
 package main
 
 import (
@@ -11,62 +11,71 @@ import (
 	"github.com/seyedali-dev/gosaidsno/aspect"
 )
 
+// -------------------------------------------- Retry Wrapper --------------------------------------------
+
+// WithRetry wraps a function with retry logic
+func WithRetry[T any](fn func() (T, error), maxRetries int, baseDelay time.Duration) func() (T, error) {
+	return func() (T, error) {
+		var result T
+		var err error
+
+		for attempt := 0; attempt <= maxRetries; attempt++ {
+			if attempt > 0 {
+				delay := time.Duration(math.Pow(2, float64(attempt-1))) * baseDelay
+				log.Printf("[RETRY] Attempt %d/%d failed, retrying in %v...", attempt, maxRetries, delay)
+				time.Sleep(delay)
+			}
+
+			result, err = fn()
+			if err == nil {
+				if attempt > 0 {
+					log.Printf("[RETRY] Success on attempt %d", attempt+1)
+				}
+				return result, nil
+			}
+		}
+
+		log.Printf("[RETRY] Exhausted all %d retries", maxRetries)
+		return result, err
+	}
+}
+
 // -------------------------------------------- Setup --------------------------------------------
 
 func setupAOP() {
-	log.Println("=== Setting up Retry AOP ===")
+	log.Println("=== Setting up Monitoring AOP ===")
 
 	aspect.MustRegister("SendEmail")
 	aspect.MustRegister("ProcessPayment")
 
-	// Retry logic with exponential backoff
-	setupRetry("SendEmail", 3, 100*time.Millisecond)
-	setupRetry("ProcessPayment", 5, 200*time.Millisecond)
+	// Add timing for monitoring
+	for _, fn := range []string{"SendEmail", "ProcessPayment"} {
+		aspect.MustAddAdvice(fn, aspect.Advice{
+			Type:     aspect.Before,
+			Priority: 100,
+			Handler: func(ctx *aspect.Context) error {
+				ctx.Metadata["start"] = time.Now()
+				return nil
+			},
+		})
+
+		aspect.MustAddAdvice(fn, aspect.Advice{
+			Type:     aspect.After,
+			Priority: 100,
+			Handler: func(ctx *aspect.Context) error {
+				start := ctx.Metadata["start"].(time.Time)
+				duration := time.Since(start)
+				status := "SUCCESS"
+				if ctx.Error != nil {
+					status = "FAILED"
+				}
+				log.Printf("[MONITOR] %s %s in %v", ctx.FunctionName, status, duration)
+				return nil
+			},
+		})
+	}
 
 	log.Println("=== AOP Setup Complete ===\n")
-}
-
-func setupRetry(funcName string, maxRetries int, baseDelay time.Duration) {
-	// Before: initialize retry metadata
-	aspect.MustAddAdvice(funcName, aspect.Advice{
-		Type:     aspect.Before,
-		Priority: 100,
-		Handler: func(ctx *aspect.Context) error {
-			ctx.Metadata["attempt"] = 0
-			ctx.Metadata["maxRetries"] = maxRetries
-			ctx.Metadata["baseDelay"] = baseDelay
-			return nil
-		},
-	})
-
-	// After: implement retry logic
-	aspect.MustAddAdvice(funcName, aspect.Advice{
-		Type:     aspect.After,
-		Priority: 100,
-		Handler: func(ctx *aspect.Context) error {
-			if ctx.Error == nil {
-				return nil // Success, no retry needed
-			}
-
-			attempt := ctx.Metadata["attempt"].(int)
-			maxRetries := ctx.Metadata["maxRetries"].(int)
-			baseDelay := ctx.Metadata["baseDelay"].(time.Duration)
-
-			if attempt < maxRetries {
-				// Calculate exponential backoff
-				delay := time.Duration(math.Pow(2, float64(attempt))) * baseDelay
-				log.Printf("[RETRY] %s attempt %d/%d failed, retrying in %v...",
-					ctx.FunctionName, attempt+1, maxRetries, delay)
-
-				time.Sleep(delay)
-				ctx.Metadata["attempt"] = attempt + 1
-			} else {
-				log.Printf("[RETRY] %s exhausted all %d retries", ctx.FunctionName, maxRetries)
-			}
-
-			return nil
-		},
-	})
 }
 
 // -------------------------------------------- Business Logic --------------------------------------------
@@ -105,12 +114,32 @@ func processPaymentImpl(amount float64, cardToken string) (string, error) {
 	return txnID, nil
 }
 
-// -------------------------------------------- Wrapped Functions --------------------------------------------
+// -------------------------------------------- Wrapped Functions with Retry --------------------------------------------
 
-var (
-	SendEmail      = aspect.Wrap2E("SendEmail", sendEmailImpl)
-	ProcessPayment = aspect.Wrap2RE("ProcessPayment", processPaymentImpl)
-)
+// SendEmail with retry wrapper
+func SendEmail(to, subject string) error {
+	// Wrap the base function with retry logic
+	retryFn := WithRetry(func() (struct{}, error) {
+		err := sendEmailBase(to, subject)
+		return struct{}{}, err
+	}, 3, 100*time.Millisecond)
+
+	_, err := retryFn()
+	return err
+}
+
+var sendEmailBase = aspect.Wrap2E("SendEmail", sendEmailImpl)
+
+// ProcessPayment with retry wrapper
+func ProcessPayment(amount float64, cardToken string) (string, error) {
+	retryFn := WithRetry(func() (string, error) {
+		return processPaymentBase(amount, cardToken)
+	}, 5, 200*time.Millisecond)
+
+	return retryFn()
+}
+
+var processPaymentBase = aspect.Wrap2RE("ProcessPayment", processPaymentImpl)
 
 // -------------------------------------------- Examples --------------------------------------------
 
@@ -126,7 +155,7 @@ func example1_SuccessAfterRetries() {
 	if err != nil {
 		fmt.Printf("❌ Email failed: %v\n", err)
 	} else {
-		fmt.Printf("✅ Email sent successfully after %d attempts in %v\n", emailAttempts, duration)
+		fmt.Printf("\n✅ Email sent successfully after %d attempts in %v\n", emailAttempts, duration)
 	}
 }
 
@@ -142,7 +171,7 @@ func example2_PaymentWithRetries() {
 	if err != nil {
 		fmt.Printf("❌ Payment failed: %v\n", err)
 	} else {
-		fmt.Printf("✅ Payment processed: %s (took %v with %d attempts)\n",
+		fmt.Printf("\n✅ Payment processed: %s (took %v with %d attempts)\n",
 			txnID, duration, paymentAttempts)
 	}
 }
@@ -150,25 +179,20 @@ func example2_PaymentWithRetries() {
 func example3_ExhaustedRetries() {
 	fmt.Println("\n========== Example 3: Exhausted Retries ==========\n")
 
-	// Reset circuit for this example
-	aspect.Clear()
-	setupAOP()
-
-	// Setup function that always fails
-	aspect.MustRegister("FailingOperation")
-	setupRetry("FailingOperation", 3, 50*time.Millisecond)
-
-	var FailingOperation = aspect.Wrap1E("FailingOperation", func(data string) error {
-		log.Printf("[OPERATION] Executing with data: %s", data)
-		return errors.New("permanent failure")
-	})
+	// Function that always fails
+	var failAttempts = 0
+	FailingOperation := WithRetry(func() (string, error) {
+		failAttempts++
+		log.Printf("[OPERATION] Attempt %d - Executing", failAttempts)
+		return "", errors.New("permanent failure")
+	}, 3, 50*time.Millisecond)
 
 	start := time.Now()
-	err := FailingOperation("test_data")
+	_, err := FailingOperation()
 	duration := time.Since(start)
 
 	if err != nil {
-		fmt.Printf("❌ Operation failed after all retries: %v (took %v)\n", err, duration)
+		fmt.Printf("\n❌ Operation failed after %d attempts: %v (took %v)\n", failAttempts, err, duration)
 	}
 }
 

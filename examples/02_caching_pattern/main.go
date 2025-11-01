@@ -78,12 +78,21 @@ func setupAOP() {
 		},
 	})
 
-	// AfterReturning to populate cache
+	// AfterReturning to populate cache (only when function actually executed)
 	aspect.MustAddAdvice("FetchUserProfile", aspect.Advice{
 		Type:     aspect.AfterReturning,
 		Priority: 100,
 		Handler: func(ctx *aspect.Context) error {
+			// Don't cache if execution was skipped (cache hit)
+			if ctx.Skipped {
+				return nil
+			}
+
 			userID := ctx.Args[0].(string)
+			if len(ctx.Results) == 0 || ctx.Results[0] == nil {
+				return nil // No result to cache
+			}
+
 			profile := ctx.Results[0].(*UserProfile)
 			cacheKey := "user:" + userID
 
@@ -128,7 +137,16 @@ func setupAOP() {
 		Type:     aspect.AfterReturning,
 		Priority: 100,
 		Handler: func(ctx *aspect.Context) error {
+			// Don't cache if execution was skipped
+			if ctx.Skipped {
+				return nil
+			}
+
 			userID := ctx.Args[0].(string)
+			if len(ctx.Results) == 0 || ctx.Results[0] == nil {
+				return nil
+			}
+
 			recommendations := ctx.Results[0].([]string)
 
 			cacheMu.Lock()
@@ -194,26 +212,41 @@ var (
 
 // -------------------------------------------- Examples --------------------------------------------
 
-func example1_BasicCaching() {
+func example1_BasicCaching() error {
 	fmt.Println("\n========== Example 1: Basic Caching ==========\n")
 
 	userID := "user_123"
 
 	// First call - cache miss, executes DB query
 	start := time.Now()
-	profile1, _ := FetchUserProfile(userID)
+	profile1, err := FetchUserProfile(userID)
+	if err != nil {
+		fmt.Printf("❌ Error fetching user profile: %v\n", err)
+		return err
+	}
+	if profile1 == nil {
+		return fmt.Errorf("❌ User profile not found - profile 1 is nil")
+	}
 	duration1 := time.Since(start)
 	fmt.Printf("First call: %s, took %v\n", profile1.Name, duration1)
 
 	// Second call - cache hit, skips DB query
 	start = time.Now()
-	profile2, _ := FetchUserProfile(userID)
+	profile2, err := FetchUserProfile(userID)
+	if err != nil {
+		fmt.Printf("❌ Error fetching user profile: %v\n", err)
+		return err
+	}
+	if profile2 == nil {
+		return fmt.Errorf("❌ User profile not found - profile 2 is nil")
+	}
 	duration2 := time.Since(start)
 	fmt.Printf("Second call: %s, took %v (%.1fx faster)\n\n",
 		profile2.Name, duration2, float64(duration1)/float64(duration2))
 
 	hits, miss := userCache.Stats()
 	fmt.Printf("Cache Stats: %d hits, %d miss\n", hits, miss)
+	return nil
 }
 
 func example2_TTLCache() {
@@ -267,7 +300,9 @@ func example3_PerformanceComparison() {
 func main() {
 	setupAOP()
 
-	example1_BasicCaching()
+	if err := example1_BasicCaching(); err != nil {
+		panic(err)
+	}
 	example2_TTLCache()
 	example3_PerformanceComparison()
 
