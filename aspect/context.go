@@ -31,6 +31,10 @@ func NewContext(functionName string, args ...any) *Context {
 
 // SetResult sets a return value at the specified index.
 func (aopCtx *Context) SetResult(index int, value any) {
+	if index < 0 {
+		return // Invalid index
+	}
+
 	// Extend results slice if needed
 	for len(aopCtx.Results) <= index {
 		aopCtx.Results = append(aopCtx.Results, nil)

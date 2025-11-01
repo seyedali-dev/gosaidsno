@@ -106,7 +106,11 @@ func (ac *AdviceChain) Count() int {
 
 // executeAdviceList runs a list of advice in priority order.
 func (ac *AdviceChain) executeAdviceList(adviceList []Advice, ctx *Context) error {
-	// Sort by priority
+	if len(adviceList) == 0 {
+		return nil
+	}
+
+	// Sort by priority (highest first)
 	sortedAdviceList := make([]Advice, len(adviceList))
 	copy(sortedAdviceList, adviceList)
 

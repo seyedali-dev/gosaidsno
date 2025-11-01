@@ -74,8 +74,11 @@ func Wrap1R[A, R any](name string, fn func(A) R) func(A) R {
 		}, a)
 
 		// If Around advice set a result and skipped execution, use that result
-		if ctx != nil && len(ctx.Results) > 0 && ctx.Results[0] != nil {
-			result = ctx.Results[0].(R)
+		if ctx != nil && ctx.Skipped && len(ctx.Results) > 0 && ctx.Results[0] != nil {
+			// Safe type assertion with proper handling
+			if res, ok := ctx.Results[0].(R); ok {
+				result = res
+			}
 		}
 
 		return result
