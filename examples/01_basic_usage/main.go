@@ -50,8 +50,8 @@ func setupLogging() {
 			Type:     aspect.Before,
 			Priority: 100,
 			Handler: func(ctx *aspect.Context) error {
-				log.Println("[BEFORE]")
-				log.Printf("[LOG] Starting %s", ctx.FunctionName)
+				log.Printf("🟢 [BEFORE] %s - Priority: %d", ctx.FunctionName, 100)
+				log.Printf("   📝 [LOG] Starting %s with args: %v", ctx.FunctionName, ctx.Args)
 				return nil
 			},
 		})
@@ -60,12 +60,15 @@ func setupLogging() {
 			Type:     aspect.After,
 			Priority: 100,
 			Handler: func(ctx *aspect.Context) error {
-				log.Println("[AFTER]")
+				log.Printf("🔵 [AFTER] %s - Priority: %d", ctx.FunctionName, 100)
 				status := "SUCCESS"
 				if ctx.Error != nil {
 					status = "FAILED"
 				}
-				log.Printf("[LOG] Completed %s - %s", ctx.FunctionName, status)
+				log.Printf("   📝 [LOG] Completed %s - Status: %s", ctx.FunctionName, status)
+				if ctx.Error != nil {
+					log.Printf("   ❌ Error: %v", ctx.Error)
+				}
 				return nil
 			},
 		})
@@ -78,8 +81,9 @@ func setupTiming() {
 			Type:     aspect.Before,
 			Priority: 90,
 			Handler: func(ctx *aspect.Context) error {
-				log.Println("[BEFORE]")
+				log.Printf("🟢 [BEFORE] %s - Priority: %d", ctx.FunctionName, 90)
 				ctx.Metadata["start"] = time.Now()
+				log.Printf("   ⏱️  [TIMING] Started timer for %s", ctx.FunctionName)
 				return nil
 			},
 		})
@@ -88,13 +92,13 @@ func setupTiming() {
 			Type:     aspect.After,
 			Priority: 90,
 			Handler: func(ctx *aspect.Context) error {
-				log.Println("[AFTER]")
+				log.Printf("🔵 [AFTER] %s - Priority: %d", ctx.FunctionName, 90)
 				start, ok := ctx.Metadata["start"].(time.Time)
 				if !ok {
 					return nil // Skip if timing not initialized
 				}
 				duration := time.Since(start)
-				log.Printf("[PERF] %s took %v", ctx.FunctionName, duration)
+				log.Printf("   ⏱️  [PERF] %s took %v", ctx.FunctionName, duration)
 				return nil
 			},
 		})
@@ -106,17 +110,19 @@ func setupValidation() {
 		Type:     aspect.Before,
 		Priority: 110, // Higher priority, runs first
 		Handler: func(ctx *aspect.Context) error {
-			log.Println("[BEFORE]")
+			log.Printf("🟢 [BEFORE] %s - Priority: %d", ctx.FunctionName, 110)
 			userID := ctx.Args[0].(string)
 			amount := ctx.Args[1].(float64)
 
 			if userID == "" {
+				log.Printf("   ❌ [VALIDATE] userID cannot be empty")
 				return errors.New("userID cannot be empty")
 			}
 			if amount <= 0 {
+				log.Printf("   ❌ [VALIDATE] amount must be positive")
 				return errors.New("amount must be positive")
 			}
-			log.Printf("[VALIDATE] Order validation passed")
+			log.Printf("   ✅ [VALIDATE] Order validation passed")
 			return nil
 		},
 	})
@@ -128,9 +134,9 @@ func setupPanicRecovery() {
 			Type:     aspect.AfterThrowing,
 			Priority: 100,
 			Handler: func(ctx *aspect.Context) error {
-				log.Println("[AFTER_THROWING]")
-				log.Printf("[PANIC RECOVERY] Function %s panicked: %v", ctx.FunctionName, ctx.PanicValue)
-				// In production: send alert, log to monitoring system
+				log.Printf("🔴 [AFTER_THROWING] %s - Priority: %d", ctx.FunctionName, 100)
+				log.Printf("   🚨 [PANIC RECOVERY] Function %s panicked: %v", ctx.FunctionName, ctx.PanicValue)
+				log.Printf("   🔧 [RECOVERY] Recovered from panic, continuing execution")
 				return nil
 			},
 		})
@@ -140,6 +146,7 @@ func setupPanicRecovery() {
 // -------------------------------------------- Business Logic (Unwrapped) --------------------------------------------
 
 func getUserImpl(id string) (*User, error) {
+	log.Printf("   👨‍💼 [BUSINESS] getUserImpl executing with id: %s", id)
 	// Simulate database query
 	time.Sleep(50 * time.Millisecond)
 
@@ -147,6 +154,7 @@ func getUserImpl(id string) (*User, error) {
 		return nil, errors.New("user ID is required")
 	}
 
+	log.Printf("   ✅ [BUSINESS] getUserImpl completed successfully")
 	return &User{
 		ID:       id,
 		Username: "john_doe",
@@ -155,6 +163,7 @@ func getUserImpl(id string) (*User, error) {
 }
 
 func createOrderImpl(userID string, amount float64) (*Order, error) {
+	log.Printf("   🛒 [BUSINESS] createOrderImpl executing for user: %s, amount: %.2f", userID, amount)
 	// Simulate order creation
 	time.Sleep(100 * time.Millisecond)
 
@@ -164,20 +173,25 @@ func createOrderImpl(userID string, amount float64) (*Order, error) {
 		Amount: amount,
 	}
 
+	log.Printf("   ✅ [BUSINESS] createOrderImpl completed, order: %s", order.ID)
 	return order, nil
 }
 
 func validateUserImpl(user *User) error {
+	log.Printf("   🔍 [BUSINESS] validateUserImpl executing for user: %s", user.Email)
 	if user.Email == "invalid@example.com" {
+		log.Printf("   ❌ [BUSINESS] Invalid email domain detected")
 		return errors.New("invalid email domain")
 	}
+	log.Printf("   ✅ [BUSINESS] User validation passed")
 	return nil
 }
 
 func sendNotificationImpl(userID, message string) {
+	log.Printf("   📧 [BUSINESS] sendNotificationImpl executing for user: %s", userID)
 	// Simulate notification sending
 	time.Sleep(30 * time.Millisecond)
-	log.Printf("[EMAIL] Sent to user %s: %s", userID, message)
+	log.Printf("   ✅ [BUSINESS] Notification sent: %s", message)
 }
 
 // -------------------------------------------- Wrapped Functions --------------------------------------------
@@ -195,13 +209,14 @@ func example1_BasicLoggingAndTiming() {
 	fmt.Println("\n========== Example 1: Basic Logging & Timing ==========")
 
 	// Normal successful operation
+	log.Println("\n--- Calling GetUser with valid ID ---")
 	user, err := GetUser("user_123")
 	if err != nil {
 		log.Printf("Error: %v", err)
 		return
 	}
 
-	fmt.Printf("\nResult: Got user %s (%s)\n", user.Username, user.Email)
+	fmt.Printf("\n🎯 Result: Got user %s (%s)\n", user.Username, user.Email)
 }
 
 func example2_Validation() {
@@ -257,8 +272,8 @@ func example4_AfterReturning() {
 		Type:     aspect.AfterReturning,
 		Priority: 50,
 		Handler: func(ctx *aspect.Context) error {
-			log.Println("[AFTER_RETURNING]")
-			log.Printf("[SUCCESS HOOK] Order created successfully, sending confirmation...")
+			log.Printf("🟣 [AFTER_RETURNING] %s - Priority: %d", ctx.FunctionName, 50)
+			log.Printf("   🎉 [SUCCESS HOOK] Order created successfully, sending confirmation...")
 			order := ctx.Results[0].(*Order)
 			SendNotification(order.UserID, fmt.Sprintf("Order %s confirmed!", order.ID))
 			return nil

@@ -22,20 +22,27 @@ func WithRetry[T any](fn func() (T, error), maxRetries int, baseDelay time.Durat
 		for attempt := 0; attempt <= maxRetries; attempt++ {
 			if attempt > 0 {
 				delay := time.Duration(math.Pow(2, float64(attempt-1))) * baseDelay
-				log.Printf("[RETRY] Attempt %d/%d failed, retrying in %v...", attempt, maxRetries, delay)
+				log.Printf("   🔄 [RETRY] Attempt %d/%d failed, retrying in %v...", attempt, maxRetries, delay)
+				log.Printf("   ⏳ [RETRY] Exponential backoff: 2^%d * %v = %v", attempt-1, baseDelay, delay)
 				time.Sleep(delay)
 			}
 
+			log.Printf("   🎯 [RETRY] Making attempt %d/%d", attempt+1, maxRetries+1)
 			result, err = fn()
 			if err == nil {
 				if attempt > 0 {
-					log.Printf("[RETRY] Success on attempt %d", attempt+1)
+					log.Printf("   ✅ [RETRY] Success on attempt %d/%d", attempt+1, maxRetries+1)
+				} else {
+					log.Printf("   ✅ [RETRY] Success on first attempt")
 				}
 				return result, nil
 			}
+
+			log.Printf("   ❌ [RETRY] Attempt %d/%d failed: %v", attempt+1, maxRetries+1, err)
 		}
 
-		log.Printf("[RETRY] Exhausted all %d retries", maxRetries)
+		log.Printf("   💥 [RETRY] Exhausted all %d retries", maxRetries)
+		log.Printf("   🚨 [RETRY] Final failure after %d attempts", maxRetries+1)
 		return result, err
 	}
 }
@@ -54,7 +61,9 @@ func setupAOP() {
 			Type:     aspect.Before,
 			Priority: 100,
 			Handler: func(ctx *aspect.Context) error {
+				log.Printf("🟢 [BEFORE] %s - Priority: %d (TIMING START)", ctx.FunctionName, 100)
 				ctx.Metadata["start"] = time.Now()
+				log.Printf("   ⏱️  [TIMING] Started execution timer")
 				return nil
 			},
 		})
@@ -63,17 +72,47 @@ func setupAOP() {
 			Type:     aspect.After,
 			Priority: 100,
 			Handler: func(ctx *aspect.Context) error {
+				log.Printf("🔵 [AFTER] %s - Priority: %d (TIMING END)", ctx.FunctionName, 100)
 				start := ctx.Metadata["start"].(time.Time)
 				duration := time.Since(start)
 				status := "SUCCESS"
 				if ctx.Error != nil {
 					status = "FAILED"
 				}
-				log.Printf("[MONITOR] %s %s in %v", ctx.FunctionName, status, duration)
+				log.Printf("   📊 [MONITOR] %s %s in %v", ctx.FunctionName, status, duration)
+				log.Printf("   📈 [METRICS] Execution completed with status: %s", status)
 				return nil
 			},
 		})
 	}
+
+	// Add detailed logging for email service
+	aspect.MustAddAdvice("SendEmail", aspect.Advice{
+		Type:     aspect.Before,
+		Priority: 90,
+		Handler: func(ctx *aspect.Context) error {
+			log.Printf("🟢 [BEFORE] %s - Priority: %d (EMAIL LOG)", ctx.FunctionName, 90)
+			to := ctx.Args[0].(string)
+			subject := ctx.Args[1].(string)
+			log.Printf("   📧 [EMAIL] Preparing to send email to: %s", to)
+			log.Printf("   📝 [EMAIL] Subject: %s", subject)
+			return nil
+		},
+	})
+
+	// Add detailed logging for payment service
+	aspect.MustAddAdvice("ProcessPayment", aspect.Advice{
+		Type:     aspect.Before,
+		Priority: 90,
+		Handler: func(ctx *aspect.Context) error {
+			log.Printf("🟢 [BEFORE] %s - Priority: %d (PAYMENT LOG)", ctx.FunctionName, 90)
+			amount := ctx.Args[0].(float64)
+			cardToken := ctx.Args[1].(string)
+			log.Printf("   💳 [PAYMENT] Processing payment: $%.2f", amount)
+			log.Printf("   🔐 [PAYMENT] Card token: %s...", cardToken[:8])
+			return nil
+		},
+	})
 
 	log.Println("=== AOP Setup Complete ===\n")
 }
@@ -84,14 +123,18 @@ var emailAttempts = 0
 
 func sendEmailImpl(to, subject string) error {
 	emailAttempts++
-	log.Printf("[EMAIL] Attempt %d - Sending to %s: %s", emailAttempts, to, subject)
+	log.Printf("   📧 [BUSINESS] sendEmailImpl executing - attempt #%d", emailAttempts)
+	log.Printf("   📤 [BUSINESS] Connecting to SMTP server...")
 
 	// Simulate transient failures
 	if emailAttempts <= 2 {
+		log.Printf("   ❌ [BUSINESS] SMTP connection timeout (simulated)")
 		return errors.New("SMTP connection timeout")
 	}
 
-	log.Printf("[EMAIL] Successfully sent!")
+	log.Printf("   ✅ [BUSINESS] Email sent successfully!")
+	log.Printf("   📨 [BUSINESS] Recipient: %s", to)
+	log.Printf("   📄 [BUSINESS] Subject: %s", subject)
 	return nil
 }
 
@@ -99,18 +142,23 @@ var paymentAttempts = 0
 
 func processPaymentImpl(amount float64, cardToken string) (string, error) {
 	paymentAttempts++
-	log.Printf("[PAYMENT] Attempt %d - Processing $%.2f", paymentAttempts, amount)
+	log.Printf("   💳 [BUSINESS] processPaymentImpl executing - attempt #%d", paymentAttempts)
+	log.Printf("   🔄 [BUSINESS] Processing payment of $%.2f", amount)
 
 	// Simulate various failure scenarios
 	if paymentAttempts == 1 {
+		log.Printf("   ❌ [BUSINESS] Network timeout (simulated)")
 		return "", errors.New("network timeout")
 	}
 	if paymentAttempts == 2 {
+		log.Printf("   ❌ [BUSINESS] Payment gateway unavailable (simulated)")
 		return "", errors.New("payment gateway unavailable")
 	}
 
 	txnID := fmt.Sprintf("txn_%d", time.Now().Unix())
-	log.Printf("[PAYMENT] Success! Transaction ID: %s", txnID)
+	log.Printf("   ✅ [BUSINESS] Payment processed successfully!")
+	log.Printf("   🧾 [BUSINESS] Transaction ID: %s", txnID)
+	log.Printf("   💰 [BUSINESS] Amount: $%.2f", amount)
 	return txnID, nil
 }
 
@@ -118,6 +166,9 @@ func processPaymentImpl(amount float64, cardToken string) (string, error) {
 
 // SendEmail with retry wrapper
 func SendEmail(to, subject string) error {
+	log.Printf("🚀 [ENTRY] SendEmail called with retry wrapper")
+	log.Printf("   🔧 [RETRY CONFIG] Max retries: 3, Base delay: 100ms")
+
 	// Wrap the base function with retry logic
 	retryFn := WithRetry(func() (struct{}, error) {
 		err := sendEmailBase(to, subject)
@@ -125,6 +176,13 @@ func SendEmail(to, subject string) error {
 	}, 3, 100*time.Millisecond)
 
 	_, err := retryFn()
+
+	if err != nil {
+		log.Printf("💥 [EXIT] SendEmail failed after all retries: %v", err)
+	} else {
+		log.Printf("✅ [EXIT] SendEmail completed successfully")
+	}
+
 	return err
 }
 
@@ -132,11 +190,22 @@ var sendEmailBase = aspect.Wrap2E("SendEmail", sendEmailImpl)
 
 // ProcessPayment with retry wrapper
 func ProcessPayment(amount float64, cardToken string) (string, error) {
+	log.Printf("🚀 [ENTRY] ProcessPayment called with retry wrapper")
+	log.Printf("   🔧 [RETRY CONFIG] Max retries: 5, Base delay: 200ms")
+
 	retryFn := WithRetry(func() (string, error) {
 		return processPaymentBase(amount, cardToken)
 	}, 5, 200*time.Millisecond)
 
-	return retryFn()
+	result, err := retryFn()
+
+	if err != nil {
+		log.Printf("💥 [EXIT] ProcessPayment failed after all retries: %v", err)
+	} else {
+		log.Printf("✅ [EXIT] ProcessPayment completed successfully: %s", result)
+	}
+
+	return result, err
 }
 
 var processPaymentBase = aspect.Wrap2RE("ProcessPayment", processPaymentImpl)
@@ -183,10 +252,12 @@ func example3_ExhaustedRetries() {
 	var failAttempts = 0
 	FailingOperation := WithRetry(func() (string, error) {
 		failAttempts++
-		log.Printf("[OPERATION] Attempt %d - Executing", failAttempts)
+		log.Printf("   💥 [BUSINESS] FailingOperation executing - attempt #%d", failAttempts)
+		log.Printf("   ❌ [BUSINESS] Permanent failure (simulated)")
 		return "", errors.New("permanent failure")
 	}, 3, 50*time.Millisecond)
 
+	log.Printf("🚀 [ENTRY] FailingOperation called (will exhaust retries)")
 	start := time.Now()
 	_, err := FailingOperation()
 	duration := time.Since(start)

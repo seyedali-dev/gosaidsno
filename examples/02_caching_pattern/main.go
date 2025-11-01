@@ -62,18 +62,23 @@ func setupAOP() {
 		Type:     aspect.Around,
 		Priority: 100,
 		Handler: func(ctx *aspect.Context) error {
+			log.Printf("🟠 [AROUND] %s - Priority: %d - START", ctx.FunctionName, 100)
 			userID := ctx.Args[0].(string)
 			cacheKey := "user:" + userID
 
 			// Check cache
 			if cached, ok := userCache.Get(cacheKey); ok {
-				log.Printf("[CACHE HIT] FetchUserProfile(%s)", userID)
+				log.Printf("   💾 [CACHE HIT] FetchUserProfile(%s) - returning cached result", userID)
 				ctx.SetResult(0, cached)
 				ctx.Skipped = true // Skip expensive DB call
+				log.Printf("   ⏩ [AROUND] Skipping function execution due to cache hit")
+				log.Printf("🟠 [AROUND] %s - END (cache hit)", ctx.FunctionName)
 				return nil
 			}
 
-			log.Printf("[CACHE MISS] FetchUserProfile(%s) - will fetch from DB", userID)
+			log.Printf("   💾 [CACHE MISS] FetchUserProfile(%s) - will fetch from DB", userID)
+			log.Printf("   ▶️  [AROUND] Proceeding with function execution")
+			log.Printf("🟠 [AROUND] %s - END (cache miss)", ctx.FunctionName)
 			return nil // Allow function to execute
 		},
 	})
@@ -83,13 +88,17 @@ func setupAOP() {
 		Type:     aspect.AfterReturning,
 		Priority: 100,
 		Handler: func(ctx *aspect.Context) error {
+			log.Printf("🟣 [AFTER_RETURNING] %s - Priority: %d", ctx.FunctionName, 100)
+
 			// Don't cache if execution was skipped (cache hit)
 			if ctx.Skipped {
+				log.Printf("   ⏭️  [CACHE] Skipping cache set - function was not executed")
 				return nil
 			}
 
 			userID := ctx.Args[0].(string)
 			if len(ctx.Results) == 0 || ctx.Results[0] == nil {
+				log.Printf("   ⚠️  [CACHE] No result to cache")
 				return nil // No result to cache
 			}
 
@@ -97,7 +106,7 @@ func setupAOP() {
 			cacheKey := "user:" + userID
 
 			userCache.Set(cacheKey, profile)
-			log.Printf("[CACHE SET] Stored user profile for %s", userID)
+			log.Printf("   💾 [CACHE SET] Stored user profile for %s", userID)
 			return nil
 		},
 	})
@@ -110,6 +119,7 @@ func setupAOP() {
 		Type:     aspect.Around,
 		Priority: 100,
 		Handler: func(ctx *aspect.Context) error {
+			log.Printf("🟠 [AROUND] %s - Priority: %d - START", ctx.FunctionName, 100)
 			userID := ctx.Args[0].(string)
 
 			cacheMu.RLock()
@@ -118,17 +128,21 @@ func setupAOP() {
 
 			// Check if cache is valid (not expired)
 			if exists && time.Since(entry.timestamp) < 5*time.Second {
-				log.Printf("[CACHE HIT] CalculateRecommendations(%s) - using cached", userID)
+				log.Printf("   💾 [CACHE HIT] CalculateRecommendations(%s) - using cached", userID)
 				ctx.SetResult(0, entry.value)
 				ctx.Skipped = true
+				log.Printf("   ⏩ [AROUND] Skipping function execution due to cache hit")
+				log.Printf("🟠 [AROUND] %s - END (cache hit)", ctx.FunctionName)
 				return nil
 			}
 
 			if exists {
-				log.Printf("[CACHE EXPIRED] CalculateRecommendations(%s) - recalculating", userID)
+				log.Printf("   💾 [CACHE EXPIRED] CalculateRecommendations(%s) - recalculating", userID)
 			} else {
-				log.Printf("[CACHE MISS] CalculateRecommendations(%s) - calculating", userID)
+				log.Printf("   💾 [CACHE MISS] CalculateRecommendations(%s) - calculating", userID)
 			}
+			log.Printf("   ▶️  [AROUND] Proceeding with function execution")
+			log.Printf("🟠 [AROUND] %s - END (cache miss/expired)", ctx.FunctionName)
 			return nil
 		},
 	})
@@ -137,13 +151,17 @@ func setupAOP() {
 		Type:     aspect.AfterReturning,
 		Priority: 100,
 		Handler: func(ctx *aspect.Context) error {
+			log.Printf("🟣 [AFTER_RETURNING] %s - Priority: %d", ctx.FunctionName, 100)
+
 			// Don't cache if execution was skipped
 			if ctx.Skipped {
+				log.Printf("   ⏭️  [CACHE] Skipping cache set - function was not executed")
 				return nil
 			}
 
 			userID := ctx.Args[0].(string)
 			if len(ctx.Results) == 0 || ctx.Results[0] == nil {
+				log.Printf("   ⚠️  [CACHE] No result to cache")
 				return nil
 			}
 
@@ -156,7 +174,7 @@ func setupAOP() {
 			}
 			cacheMu.Unlock()
 
-			log.Printf("[CACHE SET] Stored recommendations for %s (TTL: 5s)", userID)
+			log.Printf("   💾 [CACHE SET] Stored recommendations for %s (TTL: 5s)", userID)
 			return nil
 		},
 	})
@@ -180,27 +198,35 @@ type UserProfile struct {
 // -------------------------------------------- Business Logic --------------------------------------------
 
 func fetchUserProfileImpl(userID string) (*UserProfile, error) {
+	log.Printf("   👨‍💼 [BUSINESS] fetchUserProfileImpl executing for user: %s", userID)
 	// Simulate expensive database query
-	log.Printf("[DB] Executing expensive query for user %s...", userID)
+	log.Printf("   💾 [DB] Executing expensive query for user %s...", userID)
 	time.Sleep(200 * time.Millisecond)
 
-	return &UserProfile{
+	profile := &UserProfile{
 		ID:        userID,
 		Name:      "User " + userID,
 		Interests: []string{"coding", "music", "travel"},
-	}, nil
+	}
+
+	log.Printf("   ✅ [BUSINESS] fetchUserProfileImpl completed, profile: %s", profile.Name)
+	return profile, nil
 }
 
 func calculateRecommendationsImpl(userID string) ([]string, error) {
+	log.Printf("   🤖 [BUSINESS] calculateRecommendationsImpl executing for user: %s", userID)
 	// Simulate expensive ML calculation
-	log.Printf("[ML] Running recommendation engine for user %s...", userID)
+	log.Printf("   🧠 [ML] Running recommendation engine for user %s...", userID)
 	time.Sleep(300 * time.Millisecond)
 
-	return []string{
+	recommendations := []string{
 		"Product A",
 		"Product B",
 		"Product C",
-	}, nil
+	}
+
+	log.Printf("   ✅ [BUSINESS] calculateRecommendationsImpl completed, recommendations: %v", recommendations)
+	return recommendations, nil
 }
 
 // -------------------------------------------- Wrapped Functions --------------------------------------------
@@ -218,6 +244,7 @@ func example1_BasicCaching() error {
 	userID := "user_123"
 
 	// First call - cache miss, executes DB query
+	log.Println("--- First call (cache miss) ---")
 	start := time.Now()
 	profile1, err := FetchUserProfile(userID)
 	if err != nil {
@@ -231,6 +258,7 @@ func example1_BasicCaching() error {
 	fmt.Printf("First call: %s, took %v\n", profile1.Name, duration1)
 
 	// Second call - cache hit, skips DB query
+	log.Println("\n--- Second call (cache hit) ---")
 	start = time.Now()
 	profile2, err := FetchUserProfile(userID)
 	if err != nil {
@@ -255,21 +283,21 @@ func example2_TTLCache() {
 	userID := "user_456"
 
 	// First call - miss
-	fmt.Println("--- First call ---")
+	log.Println("--- First call (cache miss) ---")
 	recs1, _ := CalculateRecommendations(userID)
 	fmt.Printf("Recommendations: %v\n\n", recs1)
 
 	// Second call within TTL - hit
-	fmt.Println("--- Second call (within 5s TTL) ---")
+	log.Println("--- Second call (within 5s TTL) ---")
 	recs2, _ := CalculateRecommendations(userID)
 	fmt.Printf("Recommendations: %v\n\n", recs2)
 
 	// Wait for cache to expire
-	fmt.Println("--- Waiting for cache to expire (5s) ---")
+	log.Println("--- Waiting for cache to expire (5s) ---")
 	time.Sleep(6 * time.Second)
 
 	// Third call after TTL - expired, recalculates
-	fmt.Println("--- Third call (after TTL expired) ---")
+	log.Println("--- Third call (after TTL expired) ---")
 	recs3, _ := CalculateRecommendations(userID)
 	fmt.Printf("Recommendations: %v\n", recs3)
 }

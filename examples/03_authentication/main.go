@@ -25,6 +25,7 @@ var sessions = map[string]*Session{
 }
 
 func validateToken(token string) (*Session, error) {
+	log.Printf("      🔍 [AUTH] Looking up token in session store")
 	session, ok := sessions[token]
 	if !ok {
 		return nil, errors.New("invalid token")
@@ -33,15 +34,6 @@ func validateToken(token string) (*Session, error) {
 		return nil, errors.New("token expired")
 	}
 	return session, nil
-}
-
-func hasRole(userID, requiredRole string) bool {
-	for _, session := range sessions {
-		if session.UserID == userID {
-			return session.Role == requiredRole || session.Role == "admin"
-		}
-	}
-	return false
 }
 
 // -------------------------------------------- Setup --------------------------------------------
@@ -59,18 +51,21 @@ func setupAOP() {
 			Type:     aspect.Before,
 			Priority: 100, // Highest - run first
 			Handler: func(ctx *aspect.Context) error {
+				log.Printf("🟢 [BEFORE] %s - Priority: %d (AUTHENTICATION)", ctx.FunctionName, 100)
 				token := ctx.Args[0].(string)
 
+				log.Printf("   🔐 [AUTH] Validating token: %s", token)
 				session, err := validateToken(token)
 				if err != nil {
-					log.Printf("[AUTH FAILED] %s - %v", ctx.FunctionName, err)
+					log.Printf("   ❌ [AUTH FAILED] %s - %v", ctx.FunctionName, err)
 					return fmt.Errorf("authentication failed: %w", err)
 				}
 
 				// Store authenticated user in metadata
 				ctx.Metadata["userID"] = session.UserID
 				ctx.Metadata["role"] = session.Role
-				log.Printf("[AUTH SUCCESS] %s - user: %s, role: %s", ctx.FunctionName, session.UserID, session.Role)
+				log.Printf("   ✅ [AUTH SUCCESS] %s - user: %s, role: %s", ctx.FunctionName, session.UserID, session.Role)
+				log.Printf("   💾 [METADATA] Stored user context for downstream advice")
 				return nil
 			},
 		})
@@ -81,15 +76,17 @@ func setupAOP() {
 		Type:     aspect.Before,
 		Priority: 90, // After authentication
 		Handler: func(ctx *aspect.Context) error {
+			log.Printf("🟢 [BEFORE] %s - Priority: %d (AUTHORIZATION)", ctx.FunctionName, 90)
 			role := ctx.Metadata["role"].(string)
+			userID := ctx.Metadata["userID"].(string)
 
+			log.Printf("   🛡️  [AUTHZ] Checking if user %s has admin role (current: %s)", userID, role)
 			if role != "admin" {
-				userID := ctx.Metadata["userID"].(string)
-				log.Printf("[AUTHZ FAILED] DeleteUser - user %s does not have admin role", userID)
+				log.Printf("   🚫 [AUTHZ FAILED] DeleteUser - user %s does not have admin role", userID)
 				return errors.New("permission denied: admin role required")
 			}
 
-			log.Printf("[AUTHZ SUCCESS] DeleteUser - admin access granted")
+			log.Printf("   ✅ [AUTHZ SUCCESS] DeleteUser - admin access granted for user %s", userID)
 			return nil
 		},
 	})
@@ -100,18 +97,37 @@ func setupAOP() {
 			Type:     aspect.After,
 			Priority: 100,
 			Handler: func(ctx *aspect.Context) error {
+				log.Printf("🔵 [AFTER] %s - Priority: %d (AUDIT)", ctx.FunctionName, 100)
 				userID, _ := ctx.Metadata["userID"].(string)
 				status := "SUCCESS"
 				if ctx.Error != nil {
 					status = "FAILED"
 				}
 
-				log.Printf("[AUDIT] Function: %s, User: %s, Status: %s, Args: %v",
-					ctx.FunctionName, userID, status, ctx.Args[1:])
+				log.Printf("   📋 [AUDIT] Function: %s", ctx.FunctionName)
+				log.Printf("   👤 [AUDIT] User: %s", userID)
+				log.Printf("   📊 [AUDIT] Status: %s", status)
+				log.Printf("   🎯 [AUDIT] Args: %v", ctx.Args[1:])
+				if ctx.Error != nil {
+					log.Printf("   ❌ [AUDIT] Error: %v", ctx.Error)
+				}
+				log.Printf("   📝 [AUDIT] Audit trail recorded")
 				return nil
 			},
 		})
 	}
+
+	// Success logging for GetUserData
+	aspect.MustAddAdvice("GetUserData", aspect.Advice{
+		Type:     aspect.AfterReturning,
+		Priority: 80,
+		Handler: func(ctx *aspect.Context) error {
+			log.Printf("🟣 [AFTER_RETURNING] %s - Priority: %d (SUCCESS LOG)", ctx.FunctionName, 80)
+			userID := ctx.Metadata["userID"].(string)
+			log.Printf("   📈 [METRICS] User %s successfully accessed data", userID)
+			return nil
+		},
+	})
 
 	log.Println("=== AOP Setup Complete ===\n")
 }
@@ -119,23 +135,31 @@ func setupAOP() {
 // -------------------------------------------- Business Logic --------------------------------------------
 
 func getUserDataImpl(token, userID string) (map[string]string, error) {
-	log.Printf("[EXEC] Fetching data for user %s", userID)
-	return map[string]string{
+	log.Printf("   👨‍💼 [BUSINESS] getUserDataImpl executing for user: %s", userID)
+	log.Printf("   💾 [BUSINESS] Fetching user data from database...")
+	time.Sleep(25 * time.Millisecond)
+	data := map[string]string{
 		"id":    userID,
 		"name":  "John Doe",
 		"email": "john@example.com",
-	}, nil
+	}
+	log.Printf("   ✅ [BUSINESS] Retrieved user data: %v", data)
+	return data, nil
 }
 
 func deleteUserImpl(token, userID string) error {
-	log.Printf("[EXEC] Deleting user %s from database", userID)
+	log.Printf("   🗑️  [BUSINESS] deleteUserImpl executing for user: %s", userID)
+	log.Printf("   💾 [BUSINESS] Deleting user from database...")
 	time.Sleep(50 * time.Millisecond)
+	log.Printf("   ✅ [BUSINESS] User %s deleted successfully", userID)
 	return nil
 }
 
 func updateSettingsImpl(token string, settings map[string]interface{}) error {
-	log.Printf("[EXEC] Updating settings: %v", settings)
+	log.Printf("   ⚙️  [BUSINESS] updateSettingsImpl executing with settings: %v", settings)
+	log.Printf("   💾 [BUSINESS] Updating user settings in database...")
 	time.Sleep(30 * time.Millisecond)
+	log.Printf("   ✅ [BUSINESS] Settings updated successfully")
 	return nil
 }
 

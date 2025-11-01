@@ -39,7 +39,7 @@ func (cb *CircuitBreaker) Call(fn func() error) error {
 
 	// Check if we should transition from OPEN to HALF_OPEN
 	if cb.state == "OPEN" && time.Since(cb.openedAt) > cb.resetTimeout {
-		log.Printf("[CIRCUIT] Transitioning OPEN -> HALF_OPEN")
+		log.Printf("   🔄 [CIRCUIT] Transitioning OPEN -> HALF_OPEN")
 		cb.state = "HALF_OPEN"
 		cb.successes = 0
 	}
@@ -55,12 +55,12 @@ func (cb *CircuitBreaker) Call(fn func() error) error {
 
 	if err != nil {
 		cb.failures++
-		log.Printf("[CIRCUIT] Failure recorded (%d/%d)", cb.failures, cb.maxFailures)
+		log.Printf("   ❌ [CIRCUIT] Failure recorded (%d/%d)", cb.failures, cb.maxFailures)
 
 		if cb.failures >= cb.maxFailures {
 			cb.state = "OPEN"
 			cb.openedAt = time.Now()
-			log.Printf("[CIRCUIT] Circuit OPENED due to failures")
+			log.Printf("   🚨 [CIRCUIT] Circuit OPENED due to failures")
 		}
 		return err
 	}
@@ -68,12 +68,12 @@ func (cb *CircuitBreaker) Call(fn func() error) error {
 	// Success
 	if cb.state == "HALF_OPEN" {
 		cb.successes++
-		log.Printf("[CIRCUIT] Success in HALF_OPEN (%d/%d)", cb.successes, cb.successesNeeded)
+		log.Printf("   ✅ [CIRCUIT] Success in HALF_OPEN (%d/%d)", cb.successes, cb.successesNeeded)
 
 		if cb.successes >= cb.successesNeeded {
 			cb.state = "CLOSED"
 			cb.failures = 0
-			log.Printf("[CIRCUIT] Circuit CLOSED - system recovered")
+			log.Printf("   🔄 [CIRCUIT] Circuit CLOSED - system recovered")
 		}
 	} else if cb.state == "CLOSED" {
 		cb.failures = 0 // Reset on success
@@ -96,33 +96,47 @@ func setupAOP() {
 		Type:     aspect.Around,
 		Priority: 100,
 		Handler: func(ctx *aspect.Context) error {
+			log.Printf("🟠 [AROUND] %s - Priority: %d - START (CIRCUIT BREAKER)", ctx.FunctionName, 100)
+
 			// Check circuit state
 			externalServiceCircuit.mu.Lock()
 			state := externalServiceCircuit.state
+			failures := externalServiceCircuit.failures
+			maxFailures := externalServiceCircuit.maxFailures
 
 			// Check if we should transition from OPEN to HALF_OPEN
 			if state == "OPEN" && time.Since(externalServiceCircuit.openedAt) > externalServiceCircuit.resetTimeout {
-				log.Printf("[CIRCUIT] Transitioning OPEN -> HALF_OPEN")
+				log.Printf("   🔄 [CIRCUIT] Transitioning OPEN -> HALF_OPEN (timeout elapsed)")
 				externalServiceCircuit.state = "HALF_OPEN"
 				externalServiceCircuit.successes = 0
 				state = "HALF_OPEN"
 			}
 			externalServiceCircuit.mu.Unlock()
 
-			log.Printf("[CIRCUIT] Current state: %s", state)
+			log.Printf("   🔌 [CIRCUIT] Current state: %s, Failures: %d/%d", state, failures, maxFailures)
 
 			if state == "OPEN" {
 				externalServiceCircuit.mu.RLock()
 				remaining := externalServiceCircuit.resetTimeout - time.Since(externalServiceCircuit.openedAt)
 				externalServiceCircuit.mu.RUnlock()
 
-				log.Printf("[CIRCUIT] Rejecting call - circuit OPEN")
+				log.Printf("   🚫 [CIRCUIT] Rejecting call - circuit OPEN")
+				log.Printf("   ⏳ [CIRCUIT] Retry available in: %v", remaining.Round(time.Second))
 				ctx.SetResult(0, "")
 				ctx.Error = fmt.Errorf("circuit breaker OPEN, retry in %v", remaining.Round(time.Second))
 				ctx.Skipped = true
+				log.Printf("🟠 [AROUND] %s - END (circuit open, execution blocked)", ctx.FunctionName)
 				return nil
 			}
 
+			if state == "HALF_OPEN" {
+				log.Printf("   ⚠️  [CIRCUIT] Circuit in HALF_OPEN state - testing service recovery")
+			} else {
+				log.Printf("   ✅ [CIRCUIT] Circuit CLOSED - allowing execution")
+			}
+
+			log.Printf("   ▶️  [CIRCUIT] Proceeding with function execution")
+			log.Printf("🟠 [AROUND] %s - END (allowing execution)", ctx.FunctionName)
 			return nil // Allow execution
 		},
 	})
@@ -132,36 +146,60 @@ func setupAOP() {
 		Type:     aspect.After,
 		Priority: 100,
 		Handler: func(ctx *aspect.Context) error {
-			if ctx.Error != nil && !ctx.Skipped {
+			log.Printf("🔵 [AFTER] %s - Priority: %d (CIRCUIT METRICS)", ctx.FunctionName, 100)
+
+			if ctx.Skipped {
+				log.Printf("   ⏭️  [CIRCUIT] Execution was skipped (circuit open)")
+				return nil
+			}
+
+			if ctx.Error != nil {
 				externalServiceCircuit.mu.Lock()
 				externalServiceCircuit.failures++
-				log.Printf("[CIRCUIT] Failure recorded (%d/%d)",
-					externalServiceCircuit.failures, externalServiceCircuit.maxFailures)
+				currentFailures := externalServiceCircuit.failures
+				maxFailures := externalServiceCircuit.maxFailures
+				log.Printf("   ❌ [CIRCUIT] Failure recorded (%d/%d)", currentFailures, maxFailures)
 
-				if externalServiceCircuit.failures >= externalServiceCircuit.maxFailures {
+				if currentFailures >= maxFailures {
 					externalServiceCircuit.state = "OPEN"
 					externalServiceCircuit.openedAt = time.Now()
-					log.Printf("[CIRCUIT] Circuit OPENED")
+					log.Printf("   🚨 [CIRCUIT] Circuit OPENED - too many failures")
+					log.Printf("   ⏰ [CIRCUIT] Reset timeout started: %v", externalServiceCircuit.resetTimeout)
 				}
 				externalServiceCircuit.mu.Unlock()
-			} else if ctx.Error == nil && !ctx.Skipped {
+			} else {
 				// Success
 				externalServiceCircuit.mu.Lock()
 				if externalServiceCircuit.state == "HALF_OPEN" {
 					externalServiceCircuit.successes++
-					log.Printf("[CIRCUIT] Success in HALF_OPEN (%d/%d)",
-						externalServiceCircuit.successes, externalServiceCircuit.successesNeeded)
+					currentSuccesses := externalServiceCircuit.successes
+					neededSuccesses := externalServiceCircuit.successesNeeded
+					log.Printf("   ✅ [CIRCUIT] Success in HALF_OPEN (%d/%d)", currentSuccesses, neededSuccesses)
 
-					if externalServiceCircuit.successes >= externalServiceCircuit.successesNeeded {
+					if currentSuccesses >= neededSuccesses {
 						externalServiceCircuit.state = "CLOSED"
 						externalServiceCircuit.failures = 0
-						log.Printf("[CIRCUIT] Circuit CLOSED - recovered")
+						log.Printf("   🔄 [CIRCUIT] Circuit CLOSED - service recovered")
+						log.Printf("   🎉 [CIRCUIT] Service is healthy again!")
 					}
 				} else {
 					externalServiceCircuit.failures = 0
+					log.Printf("   🔧 [CIRCUIT] Reset failure count - service is healthy")
 				}
 				externalServiceCircuit.mu.Unlock()
 			}
+			return nil
+		},
+	})
+
+	// Before advice for logging
+	aspect.MustAddAdvice("CallExternalService", aspect.Advice{
+		Type:     aspect.Before,
+		Priority: 90,
+		Handler: func(ctx *aspect.Context) error {
+			log.Printf("🟢 [BEFORE] %s - Priority: %d (REQUEST LOG)", ctx.FunctionName, 90)
+			endpoint := ctx.Args[0].(string)
+			log.Printf("   🌐 [REQUEST] Calling external service: %s", endpoint)
 			return nil
 		},
 	})
@@ -176,16 +214,20 @@ var callCount = 0
 
 func callExternalServiceImpl(endpoint string) (string, error) {
 	callCount++
-	log.Printf("[API] Calling external service: %s (call #%d)", endpoint, callCount)
+	log.Printf("   🌐 [BUSINESS] callExternalServiceImpl executing - call #%d", callCount)
+	log.Printf("   💻 [BUSINESS] Making API call to: %s", endpoint)
 
 	// Simulate flaky service
 	time.Sleep(100 * time.Millisecond)
 
 	if simulateFailure && callCount <= 3 {
+		log.Printf("   ❌ [BUSINESS] Service unavailable (simulated failure)")
 		return "", errors.New("service unavailable (500)")
 	}
 
-	return fmt.Sprintf("Response from %s", endpoint), nil
+	response := fmt.Sprintf("Response from %s", endpoint)
+	log.Printf("   ✅ [BUSINESS] API call successful: %s", response)
+	return response, nil
 }
 
 // -------------------------------------------- Wrapped Functions --------------------------------------------
